@@ -1,0 +1,36 @@
+services:
+  local_pgdb:
+    image: postgres
+    container_name: local_pgdb
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: x_pgdb
+      POSTGRES_USER: x_pgdb
+      POSTGRES_PASSWORD: passw
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - local_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -t 1" ]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 10s
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin4_container
+    restart: always
+    ports:
+      - "8888:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: x_pgdb@pgadmin.com
+      PGADMIN_DEFAULT_PASSWORD: passw
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+
+volumes:
+  local_pgdata:
+  pgadmin-data:
