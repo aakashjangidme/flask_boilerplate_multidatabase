@@ -11,6 +11,7 @@ aiohttp = "*"
 uvicorn = "*"
 python-dotenv = "*"
 colorlog = "*"
+pydantic = "*"
 
 [dev-packages]
 fastapi = "*"

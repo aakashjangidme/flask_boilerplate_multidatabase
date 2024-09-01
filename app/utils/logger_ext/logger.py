@@ -6,6 +6,8 @@ from flask import g, has_request_context, request
 from colorlog import ColoredFormatter
 from app.config import Config
 
+__all__ = ["TimedRotatingFileHandler"]
+
 
 LOG_FILE = Config.LOG_FILE
 LOG_FILE_ERROR = Config.LOG_FILE_ERROR
@@ -31,7 +33,7 @@ class SkipModuleFuncFilter(logging.Filter):
     def filter(self, record):
         if getattr(record, "skip_module_func", False) is True:
             record.module = "-"
-            record.lineno = "-"
+            record.lineno = "-"  # type: ignore
             record.funcName = "-"
             record.remote_addr = "-"
         return True

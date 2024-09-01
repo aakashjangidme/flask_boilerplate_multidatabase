@@ -3,7 +3,7 @@ import os
 import time
 from uuid import uuid4
 from flask import Flask, g, jsonify, request, Response
-from typing import Optional, Any
+from typing import Optional
 
 from app.database import DatabaseManager
 from app.config import config
@@ -33,7 +33,7 @@ def get_db() -> DatabaseManager:
 
 
 @app.teardown_appcontext
-def teardown_db(exception: Optional[Exception]) -> None:
+def teardown_db(exception: Optional[BaseException]) -> None:
     """
     Closes all database connections at the end of the request context.
 
@@ -88,7 +88,7 @@ def log_route_end(response: Response) -> Response:
 
 
 @app.route("/")
-def index() -> dict[str, Any]:
+def index():
     """
     Index route that returns database session information.
 

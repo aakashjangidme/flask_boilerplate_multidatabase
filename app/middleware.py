@@ -59,7 +59,7 @@ def handle_api_exception(error: APIException) -> Response:
 def handle_http_exception(error: HTTPException) -> Response:
     """Handle standard HTTP exceptions."""
     logger.error(f"HTTPException: {error}", exc_info=False)
-    return create_error_response(error.description, error.code)
+    return create_error_response(error.description, error.code) # type: ignore
 
 
 def handle_generic_exception(error: Exception) -> Response:

@@ -32,7 +32,7 @@ def create_app() -> Flask:
 
     db.init_app(app)
 
-    health_check()
+    # health_check()
 
     # Register routes
     from .routes import api
@@ -43,8 +43,10 @@ def create_app() -> Flask:
 
 
 def health_check():
-    postgres_healthy = db.postgres.fetch_one("select 1 as _health")
-    db.close_connections()
+    if db.postgres:
+        postgres_healthy = db.postgres.fetch_one("select 1 as _health")
+        db.close_connections()
+
     if not postgres_healthy:
         logger.error("PostgreSQL connection is not healthy.")
         exit(1)

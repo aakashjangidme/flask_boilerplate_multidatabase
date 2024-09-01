@@ -15,9 +15,11 @@ class DatabaseManager:
     __ext_name__ = "db_manager"
 
     def __init__(self, app=None, config=None):
-        self.config: dict = config
-        self._postgres: Optional[PostgresConnector] = None
+        self._postgres: Optional[DatabaseConnector] = None
         self._oracle: Optional[DatabaseConnector] = None
+
+        if config is not None:
+            self.config = config
 
         if app is not None:
             self.init_app(app)
@@ -25,6 +27,7 @@ class DatabaseManager:
     def init_app(self, app):
         """Initialize the database manager with the Flask app."""
         self.config = app.config
+
         app.extensions[self.__ext_name__] = self
 
         @app.before_request
@@ -39,7 +42,7 @@ class DatabaseManager:
                 db_manager.close_connections()
 
     @property
-    def postgres(self) -> Optional[PostgresConnector]:
+    def postgres(self) -> Optional[DatabaseConnector]:
         if self._postgres is None:
             try:
                 logger.debug("Lazy initializing PostgresConnector")

@@ -1,18 +1,45 @@
 import logging
 from contextlib import contextmanager
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Optional
 
 import psycopg2
 import psycopg2.pool
+from psycopg2.extensions import connection as _Connection, cursor as _Cursor
 
-from app.database.meta.connector import DatabaseConnector
+from app.database.meta.connector import (
+    DatabaseConnector,
+    PagedResult,
+    Query,
+    QueryParams,
+    Result,
+    Row,
+    RowFactory,
+)
+from app.models import  PaginatedResponse, Pagination
 from app.utils.logger_ext.logging_decorator import log_method_call
+
 
 logger = logging.getLogger(__name__)
 
 
 class PostgresConnector(DatabaseConnector):
+    """
+    PostgreSQL connector implementation using psycopg2.
+
+    This class manages a connection pool to a PostgreSQL database and provides
+    methods to connect, close the connection, execute queries, and fetch results.
+    """
+
     def __init__(self, user: str, password: str, host: str, port: int, database: str):
+        """
+        Initializes the PostgresConnector with connection details.
+
+        :param user: Database username.
+        :param password: Database password.
+        :param host: Database host.
+        :param port: Database port.
+        :param database: Database name.
+        """
         self.pool: psycopg2.pool.SimpleConnectionPool = (
             psycopg2.pool.SimpleConnectionPool(
                 minconn=5,
@@ -24,10 +51,15 @@ class PostgresConnector(DatabaseConnector):
                 database=database,
             )
         )
-        self.conn: Optional[psycopg2.extensions.connection] = None
+        self.conn: Optional[_Connection] = None
 
     @log_method_call
     def connect(self) -> None:
+        """
+        Establishes a connection to the PostgreSQL database from the pool.
+
+        This method acquires a connection from the pool and logs the connection status.
+        """
         try:
             self.conn = self.pool.getconn()
             if self.conn:
@@ -37,6 +69,11 @@ class PostgresConnector(DatabaseConnector):
             raise
 
     def close(self) -> None:
+        """
+        Closes the connection to the PostgreSQL database and returns it to the pool.
+
+        This method logs the status of the connection pool release.
+        """
         if self.conn:
             try:
                 self.pool.putconn(self.conn)
@@ -48,56 +85,68 @@ class PostgresConnector(DatabaseConnector):
 
     @log_method_call
     def reconnect(self) -> None:
-        """Reconnect to the database."""
+        """
+        Reconnects to the PostgreSQL database.
+
+        This method closes the current connection and establishes a new one.
+        """
         self.close()
         self.connect()
 
     @contextmanager
     def get_cursor(self):
         """
-        Context manager for database cursor, automatically handles exceptions
-        and commits/rollbacks.
+        Context manager for obtaining a database cursor.
+
+        This method handles the creation, commit, and rollback of transactions.
+        If an exception occurs, it will log the error and rollback the transaction.
         """
         if not self.conn:
             self.connect()
-        cursor = self.conn.cursor()
+
+        if self.conn:
+            cursor: _Cursor = self.conn.cursor()
+
         try:
             yield cursor
-            self.conn.commit()
+
         except psycopg2.DatabaseError as e:
             logger.error("DatabaseError: %s", e)
-            self.conn.rollback()
+
+            if self.conn:
+                self.conn.rollback()
             raise
         finally:
+
             cursor.close()
 
-    def _row_factory(
-        self, cursor: psycopg2.extensions.cursor
-    ) -> Callable[[Tuple[Any, ...]], Dict[str, Any]]:
+    def _row_factory(self, cursor: _Cursor) -> RowFactory:
         """
-        Factory function to convert rows into dictionaries.
+        Creates a factory function to convert rows into dictionaries.
 
-        :param cursor: The database cursor.
-        :return: A function that converts a row into a dictionary.
+        :param cursor: The database cursor used to fetch column descriptions.
+        :return: A function that converts a tuple of row data into a dictionary with column names as keys.
         """
-        columns: List[str] = [desc[0] for desc in cursor.description]
+        if cursor.description is not None:
+            columns: list[str] = [desc.name for desc in cursor.description]
+
         return lambda row: dict(zip(columns, row))
 
     def _execute_query(
         self,
-        query: str,
-        params: Optional[Tuple[Any, ...]] = None,
+        query: Query,
+        params: QueryParams = None,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> PagedResult:
         """
-        Executes a query with optional pagination and returns results as a dictionary.
+        Executes a SQL query with optional pagination and returns the results.
 
         :param query: SQL query to execute.
-        :param params: Parameters for the SQL query.
-        :param page: Page number for pagination.
-        :param page_size: Number of rows per page for pagination.
-        :return: Dictionary containing 'total' (total number of rows) and 'data' (query results as a list of dicts).
+        :param params: Optional parameters for the SQL query.
+        :param page: Optional page number for pagination.
+        :param page_size: Optional number of rows per page for pagination.
+        :return: A DatabaseResponseModel containing 'total' (total number of rows) and 'data' (query results as a list of dictionaries).
         """
         if params is None:
             params = ()
@@ -122,20 +171,31 @@ class PostgresConnector(DatabaseConnector):
                 SELECT * FROM paginated
             """
 
-        result: Dict[str, Any] = {"total": 0, "data": []}
+        result: PagedResult = PaginatedResponse()
 
         with self.get_cursor() as cursor:
             try:
                 cursor.execute(query, params)
+                row_to_dict = self._row_factory(cursor)
                 rows = cursor.fetchall()
 
                 if rows:
-                    row_to_dict = self._row_factory(cursor)
-                    result["total"] = rows[0][-1]  # Total count is in the last column
-                    result["data"] = [row_to_dict(row) for row in rows]
+                    total_ = rows[0][-1]  # Total count is in the last column
+                    result.data = [row_to_dict(row) for row in rows]
+
+                    total_pages = (
+                        (total_ + page_size - 1) // page_size if page_size else 1
+                    )
+
+                    result.pagination = Pagination(
+                        page=page or 1,
+                        size=page_size or total_,
+                        total_items=total_,
+                        total_pages=total_pages,
+                    )
 
                 logger.debug(
-                    f"Query executed successfully, fetched {len(result.get('data'))} rows"
+                    f"Query executed successfully, fetched {len(result.data)} rows" # type: ignore
                 )
             except psycopg2.DatabaseError as e:
                 logger.error(f"Query execution error: {e}")
@@ -143,34 +203,39 @@ class PostgresConnector(DatabaseConnector):
 
         return result
 
-    def execute(self, query: str, params: Optional[Tuple[Any, ...]] = None) -> None:
+    @log_method_call
+    def execute(self, query: Query, params: QueryParams = None) -> None:
         """
-        Executes a non-query command (e.g., INSERT, UPDATE, DELETE).
+        Executes a non-query SQL command (e.g., INSERT, UPDATE, DELETE).
 
         :param query: SQL command to execute.
-        :param params: Parameters for the SQL command.
+        :param params: Optional parameters for the SQL command.
         """
         if params is None:
             params = ()
+
         logger.info(f"Executing non-query: {query} with params: {params}")
+
         with self.get_cursor() as cursor:
             try:
                 cursor.execute(query, params)
                 logger.debug("Non-query executed successfully")
+                if self.conn:
+                    self.conn.commit()
             except psycopg2.DatabaseError as e:
                 logger.error(f"Non-query execution error: {e}")
+                if self.conn:
+                    self.conn.rollback()
                 raise
 
     @log_method_call
-    def fetch_one(
-        self, query: str, params: Optional[Tuple[Any, ...]] = None
-    ) -> Optional[Dict[str, Any]]:
+    def fetch_one(self, query: Query, params: QueryParams = None) -> Row | None:
         """
         Fetches a single row from the database.
 
         :param query: SQL query to execute.
-        :param params: Parameters for the SQL query.
-        :return: Dictionary representing the row, or None if no row is found.
+        :param params: Optional parameters for the SQL query.
+        :return: A dictionary representing the row, or None if no row is found.
         """
         if params is None:
             params = ()
@@ -187,16 +252,14 @@ class PostgresConnector(DatabaseConnector):
                 raise
 
     @log_method_call
-    def fetch_many(
-        self, query: str, size: int, params: Optional[Tuple[Any, ...]] = None
-    ) -> List[Dict[str, Any]]:
+    def fetch_many(self, query: Query, size: int, params: QueryParams = None) -> Result:
         """
         Fetches a limited number of rows from the database.
 
         :param query: SQL query to execute.
         :param size: Number of rows to fetch.
-        :param params: Parameters for the SQL query.
-        :return: List of dictionaries representing the rows.
+        :param params: Optional parameters for the SQL query.
+        :return: A list of dictionaries representing the rows.
         """
         if params is None:
             params = ()
@@ -213,18 +276,18 @@ class PostgresConnector(DatabaseConnector):
     @log_method_call
     def fetch_all(
         self,
-        query: str,
-        params: Optional[Tuple[Any, ...]] = None,
+        query: Query,
+        params: QueryParams = None,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-    ) -> Dict[str, Any]:
+    ) -> PagedResult:
         """
-        Fetches all rows matching the query.
+        Fetches all rows matching the query with optional pagination.
 
         :param query: SQL query to execute.
-        :param params: Parameters for the SQL query.
-        :param page: Page number for pagination.
-        :param page_size: Number of rows per page for pagination.
-        :return: List of dictionaries representing the rows.
+        :param params: Optional parameters for the SQL query.
+        :param page: Optional page number for pagination.
+        :param page_size: Optional number of rows per page for pagination.
+        :return: A DatabaseResponseModel containing 'total' (total number of rows) and 'data' (query results as a list of dictionaries).
         """
         return self._execute_query(query, params, page, page_size)

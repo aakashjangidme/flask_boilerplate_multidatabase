@@ -8,4 +8,11 @@ class APIException(Exception):
 
     def to_dict(self) -> dict:
         """Convert the exception to a dictionary."""
-        return {"error": self.message}
+        return {"status": "error", "message": self.message, "data": None}
+
+
+class ValidationError(Exception):
+    """Custom exception raised for validation errors."""
+
+    def __init__(self, message):
+        super().__init__(message)
