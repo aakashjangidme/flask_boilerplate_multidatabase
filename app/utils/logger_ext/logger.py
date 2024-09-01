@@ -29,7 +29,7 @@ class RequestFilter(logging.Filter):
 
 class SkipModuleFuncFilter(logging.Filter):
     def filter(self, record):
-        if getattr(record, "skip_module_func", False) == True:
+        if getattr(record, "skip_module_func", False) is True:
             record.module = "-"
             record.lineno = "-"
             record.funcName = "-"
@@ -60,14 +60,13 @@ LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
-        "defaultFormatter": {
+        "default": {
             "format": "[%(asctime)s] %(levelname)s [%(filename)s:%(lineno)s] %(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
         },
-        "colorFormatter": {
+        "colored": {
             "()": ColoredFormatter,
-            "format": "[{asctime}] {log_color}{levelname}{reset} [{request_id} {remote_addr}] [{module}:{funcName}:{lineno}]: {log_color} {message}",
-            "style": "{",
+            "format": "[%(asctime)s] %(log_color)s%(levelname)-8s%(reset)s[%(request_id)s %(remote_addr)s] [%(module)s.%(funcName)s:%(lineno)s] :: %(log_color)s%(message)s",
             "datefmt": "%Y-%m-%d %H:%M:%S",
             "log_colors": {
                 "DEBUG": "cyan",
@@ -87,7 +86,7 @@ LOGGING_CONFIG = {
         "console": {
             "class": "logging.StreamHandler",
             "level": LOG_LEVEL,
-            "formatter": "colorFormatter",
+            "formatter": "colored",
             "filters": ["request_filter", "skip_module_func_filter"],
         },
         "file": {

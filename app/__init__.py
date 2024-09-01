@@ -1,9 +1,10 @@
 import logging
 import os
-from typing import Optional
-from flask import Flask, g
+
+from flask import Flask
 
 
+from app.database.db_manager import DatabaseManager
 from app.utils.logger_ext.logger import setup_logger_ext
 from app.config import config
 from .middleware import (
@@ -12,6 +13,8 @@ from .middleware import (
 
 
 logger = logging.getLogger(__name__)
+
+db = DatabaseManager()
 
 
 def create_app() -> Flask:
@@ -27,9 +30,21 @@ def create_app() -> Flask:
     # Register middleware
     register_middlewares(app)
 
+    db.init_app(app)
+
+    health_check()
+
     # Register routes
     from .routes import api
 
     app.register_blueprint(api)
 
     return app
+
+
+def health_check():
+    postgres_healthy = db.postgres.fetch_one("select 1 as _health")
+    db.close_connections()
+    if not postgres_healthy:
+        logger.error("PostgreSQL connection is not healthy.")
+        exit(1)

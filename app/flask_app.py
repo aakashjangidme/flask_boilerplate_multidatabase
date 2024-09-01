@@ -28,7 +28,7 @@ def get_db() -> DatabaseManager:
     :return: An instance of DatabaseManager.
     """
     if "db_manager" not in g:
-        g.db_manager = DatabaseManager(app.config)
+        g.db_manager = DatabaseManager(config=app.config)
     return g.db_manager
 
 
