@@ -18,23 +18,23 @@ Query: TypeAlias = str
 # A single row from a query result, represented as a dictionary.
 # The keys in this dictionary are column names, and the values are the data
 # for each column in that row. Example: {'id': 1, 'name': 'Alice', 'email': 'alice@example.com'}
-Row: TypeAlias = Dict[str, Any]
+Record: TypeAlias = Dict[str, Any]
 
 # A factory function that converts a tuple of row data into a Row dictionary.
 # This callable takes a tuple (representing a row) and returns a dictionary
 # with column names as keys and row data as values. Example:
 # lambda row: {'id': row[0], 'name': row[1], 'email': row[2]}
-RowFactory: TypeAlias = Callable[[Tuple[Any, ...]], Row]
+RowFactory: TypeAlias = Callable[[Tuple[Any, ...]], Record]
 
 # Data model representing a paginated query result.
 # It includes both the total number of rows and the data for the current page.
 # Example: DatabaseResponseModel(total=100, data=[{'id': 1, 'name': 'Alice'}])
-PagedResult: TypeAlias = PaginatedResponse
+PagedRecordSet: TypeAlias = PaginatedResponse
 
 # A list of rows, where each row is a dictionary representing a single record.
 # Each dictionary follows the Row type alias. Example:
 # [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}]
-Result: TypeAlias = List[Row]
+RecordSet: TypeAlias = List[Record]
 
 
 class DatabaseConnector(ABC):
@@ -75,7 +75,7 @@ class DatabaseConnector(ABC):
         """
 
     @abstractmethod
-    def fetch_one(self, query: Query, params: QueryParams = None) -> Row:
+    def fetch_one(self, query: Query, params: QueryParams = None) -> Record:
         """
         Fetches a single row from the database.
 
@@ -85,7 +85,9 @@ class DatabaseConnector(ABC):
         """
 
     @abstractmethod
-    def fetch_many(self, query: Query, size: int, params: QueryParams = None) -> Result:
+    def fetch_many(
+        self, query: Query, size: int, params: QueryParams = None
+    ) -> RecordSet:
         """
         Fetches a limited number of rows from the database.
 
@@ -102,7 +104,7 @@ class DatabaseConnector(ABC):
         params: QueryParams = None,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-    ) -> PagedResult:
+    ) -> PagedRecordSet:
         """
         Fetches all rows matching the query with optional pagination.
 

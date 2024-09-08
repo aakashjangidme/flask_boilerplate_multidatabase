@@ -1,1 +1,9 @@
-GET http://127.0.0.1:5000/
+
+GET http://127.0.0.1:5000/api/
+Content-Type: application/json
+
+###
+
+
+GET http://127.0.0.1:5000/api/user
+Content-Type: application/json

@@ -8,14 +8,14 @@ from psycopg2.extensions import connection as _Connection, cursor as _Cursor
 
 from app.database.meta.connector import (
     DatabaseConnector,
-    PagedResult,
+    PagedRecordSet,
     Query,
     QueryParams,
-    Result,
-    Row,
+    RecordSet,
+    Record,
     RowFactory,
 )
-from app.models import  PaginatedResponse, Pagination
+from app.models import MetaModel, PaginatedResponse, PaginationMeta
 from app.utils.logger_ext.logging_decorator import log_method_call
 
 
@@ -138,7 +138,7 @@ class PostgresConnector(DatabaseConnector):
         params: QueryParams = None,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-    ) -> PagedResult:
+    ) -> PagedRecordSet:
         """
         Executes a SQL query with optional pagination and returns the results.
 
@@ -154,24 +154,24 @@ class PostgresConnector(DatabaseConnector):
         if page is not None and page_size is not None:
             offset = (page - 1) * page_size
             query = f"""
-                WITH paginated AS (
+                WITH t AS (
                     SELECT *, COUNT(*) OVER () AS total_count
                     FROM ({query}) AS subquery
                     LIMIT %s OFFSET %s
                 )
-                SELECT * FROM paginated
+                SELECT * FROM t
             """
             params = (*params, page_size, offset)
         else:
             query = f"""
-                WITH paginated AS (
+                WITH t AS (
                     SELECT *, COUNT(*) OVER () AS total_count
                     FROM ({query}) AS subquery
                 )
-                SELECT * FROM paginated
+                SELECT * FROM t
             """
 
-        result: PagedResult = PaginatedResponse()
+        result: PagedRecordSet = PaginatedResponse()
 
         with self.get_cursor() as cursor:
             try:
@@ -186,16 +186,22 @@ class PostgresConnector(DatabaseConnector):
                     total_pages = (
                         (total_ + page_size - 1) // page_size if page_size else 1
                     )
-
-                    result.pagination = Pagination(
+                    
+                    metadata = MetaModel(
+                        links=None, pagination=None
+                    )
+                    
+                    metadata.pagination = PaginationMeta(
                         page=page or 1,
                         size=page_size or total_,
-                        total_items=total_,
+                        total_records=total_,
                         total_pages=total_pages,
                     )
+                    
+                    result.metadata = metadata
 
                 logger.debug(
-                    f"Query executed successfully, fetched {len(result.data)} rows" # type: ignore
+                    f"Query executed successfully, fetched {len(result.data)} rows"  # type: ignore
                 )
             except psycopg2.DatabaseError as e:
                 logger.error(f"Query execution error: {e}")
@@ -229,7 +235,7 @@ class PostgresConnector(DatabaseConnector):
                 raise
 
     @log_method_call
-    def fetch_one(self, query: Query, params: QueryParams = None) -> Row | None:
+    def fetch_one(self, query: Query, params: QueryParams = None) -> Record | None:
         """
         Fetches a single row from the database.
 
@@ -252,7 +258,9 @@ class PostgresConnector(DatabaseConnector):
                 raise
 
     @log_method_call
-    def fetch_many(self, query: Query, size: int, params: QueryParams = None) -> Result:
+    def fetch_many(
+        self, query: Query, size: int, params: QueryParams = None
+    ) -> RecordSet:
         """
         Fetches a limited number of rows from the database.
 
@@ -280,7 +288,7 @@ class PostgresConnector(DatabaseConnector):
         params: QueryParams = None,
         page: Optional[int] = None,
         page_size: Optional[int] = None,
-    ) -> PagedResult:
+    ) -> PagedRecordSet:
         """
         Fetches all rows matching the query with optional pagination.
 

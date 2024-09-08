@@ -1,40 +1,50 @@
 # models.py
 from datetime import datetime
 import logging
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, List, TypeVar, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, validator
 from pydantic.generics import GenericModel
 
 logger = logging.getLogger(__name__)
 
-T = TypeVar("T")
+T = TypeVar("T", bound=BaseModel)
 
 
-class Pagination(BaseModel):
+class PaginationMeta(BaseModel):
     page: int
     size: int
-    total_items: int
+    total_records: int
     total_pages: int
 
 
+class LinksMeta(BaseModel):
+    self: Optional[str] = None
+    next: Optional[str] = None
+    prev: Optional[str] = None
+
+
+class MetaModel(BaseModel):
+    pagination: PaginationMeta | None = None
+    links: LinksMeta | None = None
+
+
 class PaginatedResponse(GenericModel, Generic[T]):
-    links: Any | None = {}
-    pagination: Pagination | None = None
-    data: list[T] | None = None
+    data: List[T] | None = None
+    metadata: MetaModel | None = Field(None, serialization_alias="_metadata")
 
 
 class DatabaseResponseModel(BaseModel):
-    data: list[Any] = Field(default_factory=list)
+    data: List[Any] = Field(default_factory=list)
     total: int
 
 
 class RequestModel(BaseModel):
-    """Base class for all request models."""
+    """Base class for request models."""
 
     request_id: str
 
-    @field_validator("request_id")
+    @validator("request_id")
     def validate_request_id(cls, request_id):
         if not request_id:
             raise ValueError("request_id cannot be empty")
@@ -42,15 +52,15 @@ class RequestModel(BaseModel):
 
 
 class ResponseModel(BaseModel):
-    """Base class for all response models."""
+    """Base class for response models."""
 
-    message: str | None = None
+    message: Optional[str] = None
     data: Any = None
-    pagelen: int | None = None
+    pagelen: Optional[int] = None
 
-    @field_validator("message")
+    @validator("message")
     def validate_message(cls, message):
-        if message is None or message == "":
+        if not message:
             raise ValueError("message cannot be None or an empty string")
         if not isinstance(message, str):
             raise ValueError("message should be a string")
@@ -63,7 +73,7 @@ class UserRequestModel(RequestModel):
     username: str
     age: int
 
-    @field_validator("username")
+    @validator("username")
     def validate_username(cls, username):
         if not username.isalnum():
             raise ValueError("Username must be alphanumeric")
@@ -71,7 +81,7 @@ class UserRequestModel(RequestModel):
             raise ValueError("Username length must be between 3 and 50 characters")
         return username
 
-    @field_validator("age")
+    @validator("age")
     def validate_age(cls, age):
         if not (18 <= age <= 100):
             raise ValueError("Age must be between 18 and 100")
@@ -83,9 +93,3 @@ class UserModel(BaseModel):
     username: str
     email: str
     created_at: datetime
-
-
-class UserResponseModel(PaginatedResponse):
-    """Model for user responses extending ResponseModel."""
-
-    data: list[UserModel] = []

@@ -1,86 +1,44 @@
 import logging
-from flask import Blueprint, jsonify, request, url_for
+from flask import Blueprint, jsonify, request
 from app import db
-from app.models import (
-    PaginatedResponse,
-    ResponseModel,
-    UserModel,
-    UserResponseModel,
-)
+from app.models import ResponseModel, UserModel
+from app.utils.helpers import ResponseBuilder
 
 logger = logging.getLogger(__name__)
 
-api = Blueprint("api", __name__)
-
-
-def create_links(endpoint: str, page: int, page_size: int, total_pages: int) -> dict:
-    """Generate pagination links (self, next, prev) for a given endpoint."""
-    links = {
-        "self": url_for(endpoint, page=page, size=page_size, _external=True),
-        "next": None,
-        "prev": None,
-    }
-
-    if page < total_pages:
-        links["next"] = url_for(endpoint, page=page + 1, size=page_size, _external=True)
-
-    if page > 1:
-        links["prev"] = url_for(endpoint, page=page - 1, size=page_size, _external=True)
-
-    return links
-
-
-def fetch_paginated_data(
-    query: str,
-    model: PaginatedResponse,
-    endpoint: str,
-    page: int = 1,
-    page_size: int = 5,
-) -> PaginatedResponse:
-    """Fetch paginated data from the database and construct response model."""
-    if db.postgres:
-        paged_result = db.postgres.fetch_all(query, page=page, page_size=page_size)
-
-        if paged_result.data:
-            model.data = [UserModel(**user) for user in paged_result.data]
-            model.pagination = paged_result.pagination
-            model.links = create_links(
-                endpoint, page, page_size, paged_result.pagination.total_pages  # type: ignore
-            )
-
-    return model
+api = Blueprint("api", __name__, url_prefix="/api")
 
 
 @api.route("/", methods=["GET"])
-def index():
+def health_check():
+    """Check the health of the application by querying database connections."""
     response = ResponseModel()
-    response_postgres, response_oracle = None, None
+    postgres_info, oracle_info = None, None
 
     if db.postgres:
-        response_postgres = db.postgres.fetch_one(
-            "SELECT session_user, current_database()"
-        )
+        postgres_info = db.postgres.fetch_one("SELECT session_user, current_database()")
 
     if db.oracle:
-        response_oracle = db.oracle.fetch_one("SELECT session_user, current_database()")
+        oracle_info = db.oracle.fetch_one("SELECT session_user, current_database()")
 
-    response.data = dict(postgres=response_postgres, oracle=response_oracle)
-    response.message = "Health is Up"
+    response.data = {"postgres": postgres_info, "oracle": oracle_info}
+    response.message = "Application is healthy"
 
     return jsonify(response.model_dump()), 200
 
 
 @api.route("/user", methods=["GET"])
-def user():
+def list_users():
+    """Fetch and return a paginated list of users."""
     page = request.args.get("page", 1, type=int)
     page_size = request.args.get("size", 5, type=int)
 
-    response = fetch_paginated_data(
+    response = ResponseBuilder.paginate(
         query="SELECT * FROM users",
-        model=UserResponseModel(),
-        endpoint="api.user",
+        model_cls=UserModel,
+        endpoint="api.list_users",
         page=page,
         page_size=page_size,
     )
 
-    return jsonify(response.model_dump()), 200
+    return jsonify(response.model_dump(by_alias=True)), 200
